@@ -70,13 +70,16 @@ export default function ClientDashboard() {
           return;
         }
 
-        const snapshot = await getDocs(collection(db, 'messages'));
+        const [messagesSnapshot, quotationsSnapshot] = await Promise.all([
+          getDocs(collection(db, 'messages')),
+          getDocs(collection(db, 'quotations')),
+        ]);
 
         const loadedSolicitudes: Solicitud[] = [];
         const loadedCotizaciones: Cotizacion[] = [];
         const loadedContactos: Contacto[] = [];
 
-        snapshot.forEach((docSnap) => {
+        messagesSnapshot.forEach((docSnap) => {
           const data = docSnap.data() as MessageRecord;
           const tipo = detectMessageType(data);
 
@@ -115,6 +118,19 @@ export default function ClientDashboard() {
               fecha: formatDate(data),
             });
           }
+        });
+
+        quotationsSnapshot.forEach((docSnap) => {
+          const data = docSnap.data() as MessageRecord;
+
+          loadedCotizaciones.push({
+            id: docSnap.id,
+            cliente: readText(data, ['name', 'nombre', 'cliente'], 'Sin cliente'),
+            servicio: normalizeCategoria(data) ?? readText(data, ['service', 'servicio', 'category', 'selectedService'], 'No especificado'),
+            presupuesto: readText(data, ['budget', 'presupuesto', 'quoteAmount'], 'No especificado'),
+            fecha: formatDate(data),
+            estado: normalizeEstado(data),
+          });
         });
 
         setSolicitudes(loadedSolicitudes);
@@ -159,7 +175,7 @@ export default function ClientDashboard() {
     <div className="flex h-screen bg-slate-100">
       <aside className="w-72 bg-black text-gray-100 p-6 flex flex-col">
         <h2 className="text-2xl font-bold mb-2">Thelmo SM</h2>
-        <p className="text-xs text-gray-400 mb-6">Conectado a Firebase / collection: messages</p>
+        <p className="text-xs text-gray-400 mb-6">Conectado a Firebase / collections: messages y quotations</p>
         <nav className="space-y-2">
           {secciones.map((seccion) => (
             <button
@@ -379,31 +395,40 @@ function buildFirebaseErrorMessage(error: unknown): string {
     const firebaseError = error as FirestoreError;
 
     if (firebaseError.code === 'permission-denied') {
-      return 'Firestore bloqueó la lectura (permission-denied). Revisa las reglas de la colección messages.';
+      return 'Firestore bloqueó la lectura (permission-denied). Revisa las reglas de las colecciones messages y quotations.';
     }
 
     if (firebaseError.code === 'unauthenticated') {
-      return 'Firestore requiere autenticación para leer messages (unauthenticated).';
+      return 'Firestore requiere autenticación para leer messages/quotations (unauthenticated).';
     }
 
     if (firebaseError.code === 'unavailable') {
       return 'No hubo conexión con Firestore (unavailable). Revisa internet o configuración del proyecto.';
     }
 
-    return `No se pudo leer messages (${firebaseError.code}). ${firebaseError.message}`;
+    return `No se pudo leer Firestore (${firebaseError.code}). ${firebaseError.message}`;
   }
 
-  return 'No se pudo leer la colección "messages". Verifica reglas y variables de Firebase.';
+  return 'No se pudo leer Firestore. Verifica reglas y variables de Firebase.';
 }
 
 function detectMessageType(data: MessageRecord): 'servicio' | 'cotizacion' | 'contacto' | 'desconocido' {
   const value = readText(data, ['type', 'tipo', 'formType', 'source'], '').toLowerCase();
+  const template = readText(data, ['template', 'templateId'], '').toLowerCase();
 
   if (value.includes('quotation') || value.includes('cotizacion') || value.includes('quote')) {
     return 'cotizacion';
   }
 
+  if (template.includes('quote') || template.includes('cotiz')) {
+    return 'cotizacion';
+  }
+
   if (value.includes('service') || value.includes('servicio')) {
+    return 'servicio';
+  }
+
+  if (template.includes('app') || template.includes('land') || template.includes('ecom') || template.includes('serv')) {
     return 'servicio';
   }
 
@@ -419,7 +444,7 @@ function detectMessageType(data: MessageRecord): 'servicio' | 'cotizacion' | 'co
     return 'servicio';
   }
 
-  if (hasAny(data, ['email', 'correo']) && hasAny(data, ['subject', 'asunto'])) {
+  if (hasAny(data, ['email', 'correo']) && !hasAny(data, ['service', 'servicio', 'category', 'selectedService'])) {
     return 'contacto';
   }
 
