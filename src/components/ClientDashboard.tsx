@@ -2,7 +2,7 @@
 
 import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { collection, FirestoreError, getDocs, Timestamp } from 'firebase/firestore';
-import { db, getMissingFirebaseEnvVars } from '@/utils/firebase';
+import { db } from '@/utils/firebase';
 
 type ServicioCategoria = 'Landing Page' | 'E-commerce' | 'Aplicaciones Web';
 
@@ -63,8 +63,6 @@ export default function ClientDashboard() {
     const loadMessages = async () => {
       try {
         setLoading(true);
-        const missingVars = getMissingFirebaseEnvVars();
-
         const [messagesSnapshot, quotationsSnapshot] = await Promise.all([
           getDocs(collection(db, 'messages')),
           getDocs(collection(db, 'quotations')),
@@ -132,11 +130,7 @@ export default function ClientDashboard() {
         setCotizaciones(loadedCotizaciones);
         setContactos(loadedContactos);
 
-        if (missingVars.length > 0) {
-          setError(`Aviso: faltan variables .env (${missingVars.join(', ')}), usando configuración por defecto de Firebase.`);
-        } else {
-          setError(null);
-        }
+        setError(null);
       } catch (error: unknown) {
         setError(buildFirebaseErrorMessage(error));
       } finally {
