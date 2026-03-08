@@ -1,0 +1,15 @@
+
+
+
+export const Visitors = () => {
+  return (
+    <>
+        <div className="rounded shadow p-4">
+      <h2 className="text-lg font-bold text-black ">Visitantes</h2>
+      <p className="text-2xl text-indigo-700">23</p>
+    </div>
+    </>
+  );
+}
+
+export default Visitors;
