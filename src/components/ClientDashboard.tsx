@@ -64,11 +64,6 @@ export default function ClientDashboard() {
       try {
         setLoading(true);
         const missingVars = getMissingFirebaseEnvVars();
-        if (missingVars.length > 0) {
-          setError(`Faltan variables de entorno de Firebase: ${missingVars.join(', ')}`);
-          setLoading(false);
-          return;
-        }
 
         const [messagesSnapshot, quotationsSnapshot] = await Promise.all([
           getDocs(collection(db, 'messages')),
@@ -136,7 +131,12 @@ export default function ClientDashboard() {
         setSolicitudes(loadedSolicitudes);
         setCotizaciones(loadedCotizaciones);
         setContactos(loadedContactos);
-        setError(null);
+
+        if (missingVars.length > 0) {
+          setError(`Aviso: faltan variables .env (${missingVars.join(', ')}), usando configuración por defecto de Firebase.`);
+        } else {
+          setError(null);
+        }
       } catch (error: unknown) {
         setError(buildFirebaseErrorMessage(error));
       } finally {
