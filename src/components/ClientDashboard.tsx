@@ -1,8 +1,8 @@
 'use client';
 
 import { ReactNode, useEffect, useMemo, useState } from 'react';
-import { collection, getDocs, Timestamp } from 'firebase/firestore';
-import { db } from '@/utils/firebase';
+import { collection, FirestoreError, getDocs, Timestamp } from 'firebase/firestore';
+import { db, getMissingFirebaseEnvVars } from '@/utils/firebase';
 
 type ServicioCategoria = 'Landing Page' | 'E-commerce' | 'Aplicaciones Web';
 
@@ -63,6 +63,13 @@ export default function ClientDashboard() {
     const loadMessages = async () => {
       try {
         setLoading(true);
+        const missingVars = getMissingFirebaseEnvVars();
+        if (missingVars.length > 0) {
+          setError(`Faltan variables de entorno de Firebase: ${missingVars.join(', ')}`);
+          setLoading(false);
+          return;
+        }
+
         const snapshot = await getDocs(collection(db, 'messages'));
 
         const loadedSolicitudes: Solicitud[] = [];
@@ -114,8 +121,8 @@ export default function ClientDashboard() {
         setCotizaciones(loadedCotizaciones);
         setContactos(loadedContactos);
         setError(null);
-      } catch {
-        setError('No se pudo leer la colección "messages". Verifica reglas y variables de Firebase.');
+      } catch (error: unknown) {
+        setError(buildFirebaseErrorMessage(error));
       } finally {
         setLoading(false);
       }
@@ -364,6 +371,29 @@ export default function ClientDashboard() {
       </main>
     </div>
   );
+}
+
+
+function buildFirebaseErrorMessage(error: unknown): string {
+  if (typeof error === 'object' && error && 'code' in error) {
+    const firebaseError = error as FirestoreError;
+
+    if (firebaseError.code === 'permission-denied') {
+      return 'Firestore bloqueó la lectura (permission-denied). Revisa las reglas de la colección messages.';
+    }
+
+    if (firebaseError.code === 'unauthenticated') {
+      return 'Firestore requiere autenticación para leer messages (unauthenticated).';
+    }
+
+    if (firebaseError.code === 'unavailable') {
+      return 'No hubo conexión con Firestore (unavailable). Revisa internet o configuración del proyecto.';
+    }
+
+    return `No se pudo leer messages (${firebaseError.code}). ${firebaseError.message}`;
+  }
+
+  return 'No se pudo leer la colección "messages". Verifica reglas y variables de Firebase.';
 }
 
 function detectMessageType(data: MessageRecord): 'servicio' | 'cotizacion' | 'contacto' | 'desconocido' {
