@@ -1,6 +1,8 @@
 'use client';
 
-import { ReactNode, useMemo, useState } from 'react';
+import { ReactNode, useEffect, useMemo, useState } from 'react';
+import { collection, getDocs, Timestamp } from 'firebase/firestore';
+import { db } from '@/utils/firebase';
 
 type ServicioCategoria = 'Landing Page' | 'E-commerce' | 'Aplicaciones Web';
 
@@ -37,88 +39,94 @@ type ProyectoPendiente = {
   nota: string;
 };
 
-const solicitudes: Solicitud[] = [
-  {
-    id: 'SOL-001',
-    nombre: 'María López',
-    mensaje: 'Necesito una landing para lanzamiento de curso.',
-    categoria: 'Landing Page',
-    fecha: '2026-03-01',
-  },
-  {
-    id: 'SOL-002',
-    nombre: 'Carlos Pérez',
-    mensaje: 'Quiero una tienda online para ropa deportiva.',
-    categoria: 'E-commerce',
-    fecha: '2026-03-03',
-  },
-  {
-    id: 'SOL-003',
-    nombre: 'Sofía Ruiz',
-    mensaje: 'Busco app web para gestión de clientes.',
-    categoria: 'Aplicaciones Web',
-    fecha: '2026-03-04',
-  },
-  {
-    id: 'SOL-004',
-    nombre: 'Jorge Díaz',
-    mensaje: 'Landing simple para captar leads.',
-    categoria: 'Landing Page',
-    fecha: '2026-03-06',
-  },
-];
-
-const cotizaciones: Cotizacion[] = [
-  {
-    id: 'COT-015',
-    cliente: 'Eva Martínez',
-    servicio: 'E-commerce',
-    presupuesto: '$1,800',
-    fecha: '2026-03-02',
-    estado: 'Pendiente',
-  },
-  {
-    id: 'COT-016',
-    cliente: 'Luis Herrera',
-    servicio: 'Landing Page',
-    presupuesto: '$750',
-    fecha: '2026-03-05',
-    estado: 'Revisada',
-  },
-];
-
-const contactos: Contacto[] = [
-  {
-    id: 'CON-001',
-    nombre: 'Ana Torres',
-    correo: 'ana@email.com',
-    asunto: 'Información de servicios',
-    fecha: '2026-03-03',
-  },
-  {
-    id: 'CON-002',
-    nombre: 'Miguel Gómez',
-    correo: 'miguel@email.com',
-    asunto: 'Reunión para proyecto',
-    fecha: '2026-03-06',
-  },
-];
-
 type Seccion = 'Resumen' | 'Servicios' | 'Cotizaciones' | 'Proyectos' | 'Contactos' | 'Configuración';
 
+type MessageRecord = Record<string, unknown>;
+
 const secciones: Seccion[] = ['Resumen', 'Servicios', 'Cotizaciones', 'Proyectos', 'Contactos', 'Configuración'];
+const categorias: ServicioCategoria[] = ['Landing Page', 'E-commerce', 'Aplicaciones Web'];
 
 export default function ClientDashboard() {
   const [seccionActiva, setSeccionActiva] = useState<Seccion>('Resumen');
   const [categoriaActiva, setCategoriaActiva] = useState<ServicioCategoria>('Landing Page');
+  const [solicitudes, setSolicitudes] = useState<Solicitud[]>([]);
+  const [cotizaciones, setCotizaciones] = useState<Cotizacion[]>([]);
+  const [contactos, setContactos] = useState<Contacto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [proyectos, setProyectos] = useState<ProyectoPendiente[]>([
     { id: 1, cliente: 'Carla Méndez', proyecto: 'Portal corporativo', estado: 'En revisión', nota: 'Enviar propuesta final.' },
     { id: 2, cliente: 'Studio Fit', proyecto: 'Dashboard interno', estado: 'Pendiente', nota: 'Falta definir accesos.' },
   ]);
 
+  useEffect(() => {
+    const loadMessages = async () => {
+      try {
+        setLoading(true);
+        const snapshot = await getDocs(collection(db, 'messages'));
+
+        const loadedSolicitudes: Solicitud[] = [];
+        const loadedCotizaciones: Cotizacion[] = [];
+        const loadedContactos: Contacto[] = [];
+
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data() as MessageRecord;
+          const tipo = detectMessageType(data);
+
+          if (tipo === 'servicio') {
+            const categoria = normalizeCategoria(data);
+            if (!categoria) {
+              return;
+            }
+
+            loadedSolicitudes.push({
+              id: docSnap.id,
+              nombre: readText(data, ['name', 'nombre', 'fullName'], 'Sin nombre'),
+              mensaje: readText(data, ['message', 'mensaje', 'description'], 'Sin mensaje'),
+              categoria,
+              fecha: formatDate(data),
+            });
+          }
+
+          if (tipo === 'cotizacion') {
+            loadedCotizaciones.push({
+              id: docSnap.id,
+              cliente: readText(data, ['name', 'nombre', 'cliente'], 'Sin cliente'),
+              servicio: readText(data, ['service', 'servicio', 'category', 'selectedService'], 'No especificado'),
+              presupuesto: readText(data, ['budget', 'presupuesto', 'quoteAmount'], 'No especificado'),
+              fecha: formatDate(data),
+              estado: normalizeEstado(data),
+            });
+          }
+
+          if (tipo === 'contacto') {
+            loadedContactos.push({
+              id: docSnap.id,
+              nombre: readText(data, ['name', 'nombre'], 'Sin nombre'),
+              correo: readText(data, ['email', 'correo'], 'Sin correo'),
+              asunto: readText(data, ['subject', 'asunto', 'message', 'mensaje'], 'Sin asunto'),
+              fecha: formatDate(data),
+            });
+          }
+        });
+
+        setSolicitudes(loadedSolicitudes);
+        setCotizaciones(loadedCotizaciones);
+        setContactos(loadedContactos);
+        setError(null);
+      } catch {
+        setError('No se pudo leer la colección "messages". Verifica reglas y variables de Firebase.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadMessages();
+  }, []);
+
   const solicitudesFiltradas = useMemo(
     () => solicitudes.filter((solicitud) => solicitud.categoria === categoriaActiva),
-    [categoriaActiva],
+    [categoriaActiva, solicitudes],
   );
 
   const agregarProyecto = () => {
@@ -143,7 +151,8 @@ export default function ClientDashboard() {
   return (
     <div className="flex h-screen bg-slate-100">
       <aside className="w-72 bg-black text-gray-100 p-6 flex flex-col">
-        <h2 className="text-2xl font-bold mb-8">Thelmo SM</h2>
+        <h2 className="text-2xl font-bold mb-2">Thelmo SM</h2>
+        <p className="text-xs text-gray-400 mb-6">Conectado a Firebase / collection: messages</p>
         <nav className="space-y-2">
           {secciones.map((seccion) => (
             <button
@@ -160,17 +169,17 @@ export default function ClientDashboard() {
       </aside>
 
       <main className="flex-1 overflow-y-auto p-6 text-slate-900">
+        {error && <Banner>{error}</Banner>}
+
         {seccionActiva === 'Resumen' && (
           <section>
             <h1 className="text-2xl font-bold mb-4">Resumen</h1>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card title="Solicitudes" value={String(solicitudes.length)} />
-              <Card title="Cotizaciones" value={String(cotizaciones.length)} />
-              <Card title="Contactos" value={String(contactos.length)} />
+              <Card title="Solicitudes" value={loading ? '...' : String(solicitudes.length)} />
+              <Card title="Cotizaciones" value={loading ? '...' : String(cotizaciones.length)} />
+              <Card title="Contactos" value={loading ? '...' : String(contactos.length)} />
             </div>
-            <p className="mt-6 text-sm text-slate-600">
-              Panel listo para conectar con Firebase y empezar a leer datos reales.
-            </p>
+            <p className="mt-6 text-sm text-slate-600">Este panel ya usa Firebase para leer mensajes reales.</p>
           </section>
         )}
 
@@ -178,7 +187,7 @@ export default function ClientDashboard() {
           <section>
             <h1 className="text-2xl font-bold mb-4">Solicitud de servicios</h1>
             <div className="flex gap-2 mb-4">
-              {(['Landing Page', 'E-commerce', 'Aplicaciones Web'] as ServicioCategoria[]).map((categoria) => (
+              {categorias.map((categoria) => (
                 <button
                   key={categoria}
                   className={`px-4 py-2 rounded border ${
@@ -193,48 +202,65 @@ export default function ClientDashboard() {
               ))}
             </div>
 
-            <div className="space-y-3">
-              {solicitudesFiltradas.map((solicitud) => (
-                <article key={solicitud.id} className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
-                  <div className="flex justify-between">
-                    <p className="font-semibold">{solicitud.nombre}</p>
-                    <p className="text-sm text-slate-500">{solicitud.fecha}</p>
-                  </div>
-                  <p className="text-sm text-slate-700 mt-2">{solicitud.mensaje}</p>
-                </article>
-              ))}
-              {solicitudesFiltradas.length === 0 && <p>No hay mensajes en esta categoría.</p>}
-            </div>
+            {loading ? (
+              <p>Cargando mensajes...</p>
+            ) : (
+              <div className="space-y-3">
+                {solicitudesFiltradas.map((solicitud) => (
+                  <article key={solicitud.id} className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+                    <div className="flex justify-between gap-2 flex-wrap">
+                      <p className="font-semibold">{solicitud.nombre}</p>
+                      <p className="text-sm text-slate-500">{solicitud.fecha}</p>
+                    </div>
+                    <p className="text-sm text-slate-700 mt-2">{solicitud.mensaje}</p>
+                  </article>
+                ))}
+                {solicitudesFiltradas.length === 0 && <p>No hay mensajes en esta categoría.</p>}
+              </div>
+            )}
           </section>
         )}
 
         {seccionActiva === 'Cotizaciones' && (
           <section>
             <h1 className="text-2xl font-bold mb-4">Cotizaciones</h1>
-            <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <Th>ID</Th>
-                    <Th>Cliente</Th>
-                    <Th>Servicio</Th>
-                    <Th>Presupuesto</Th>
-                    <Th>Estado</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cotizaciones.map((cotizacion) => (
-                    <tr key={cotizacion.id} className="border-t border-slate-100">
-                      <Td>{cotizacion.id}</Td>
-                      <Td>{cotizacion.cliente}</Td>
-                      <Td>{cotizacion.servicio}</Td>
-                      <Td>{cotizacion.presupuesto}</Td>
-                      <Td>{cotizacion.estado}</Td>
+            {loading ? (
+              <p>Cargando cotizaciones...</p>
+            ) : (
+              <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <Th>ID</Th>
+                      <Th>Cliente</Th>
+                      <Th>Servicio</Th>
+                      <Th>Presupuesto</Th>
+                      <Th>Estado</Th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {cotizaciones.map((cotizacion) => (
+                      <tr key={cotizacion.id} className="border-t border-slate-100">
+                        <Td>{cotizacion.id.slice(0, 8)}</Td>
+                        <Td>{cotizacion.cliente}</Td>
+                        <Td>{cotizacion.servicio}</Td>
+                        <Td>{cotizacion.presupuesto}</Td>
+                        <Td>{cotizacion.estado}</Td>
+                      </tr>
+                    ))}
+                    {cotizaciones.length === 0 && (
+                      <tr>
+                        <Td>No hay cotizaciones registradas.</Td>
+                        <Td>-</Td>
+                        <Td>-</Td>
+                        <Td>-</Td>
+                        <Td>-</Td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
         )}
 
@@ -306,18 +332,23 @@ export default function ClientDashboard() {
         {seccionActiva === 'Contactos' && (
           <section>
             <h1 className="text-2xl font-bold mb-4">Contactos</h1>
-            <div className="space-y-3">
-              {contactos.map((contacto) => (
-                <article key={contacto.id} className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
-                  <div className="flex justify-between flex-wrap gap-2">
-                    <p className="font-semibold">{contacto.nombre}</p>
-                    <p className="text-sm text-slate-500">{contacto.fecha}</p>
-                  </div>
-                  <p className="text-sm">{contacto.correo}</p>
-                  <p className="text-sm text-slate-700 mt-2">{contacto.asunto}</p>
-                </article>
-              ))}
-            </div>
+            {loading ? (
+              <p>Cargando contactos...</p>
+            ) : (
+              <div className="space-y-3">
+                {contactos.map((contacto) => (
+                  <article key={contacto.id} className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+                    <div className="flex justify-between flex-wrap gap-2">
+                      <p className="font-semibold">{contacto.nombre}</p>
+                      <p className="text-sm text-slate-500">{contacto.fecha}</p>
+                    </div>
+                    <p className="text-sm">{contacto.correo}</p>
+                    <p className="text-sm text-slate-700 mt-2">{contacto.asunto}</p>
+                  </article>
+                ))}
+                {contactos.length === 0 && <p>No hay contactos registrados todavía.</p>}
+              </div>
+            )}
           </section>
         )}
 
@@ -325,13 +356,107 @@ export default function ClientDashboard() {
           <section>
             <h1 className="text-2xl font-bold mb-4">Configuración</h1>
             <p className="text-sm text-slate-600">
-              Aquí puedes añadir después las credenciales y colecciones para Firebase.
+              Asegúrate de tener un archivo <code>.env.local</code> con las variables <code>NEXT_PUBLIC_FIREBASE_*</code>
+              para leer datos en cliente.
             </p>
           </section>
         )}
       </main>
     </div>
   );
+}
+
+function detectMessageType(data: MessageRecord): 'servicio' | 'cotizacion' | 'contacto' | 'desconocido' {
+  const value = readText(data, ['type', 'tipo', 'formType', 'source'], '').toLowerCase();
+
+  if (value.includes('quotation') || value.includes('cotizacion') || value.includes('quote')) {
+    return 'cotizacion';
+  }
+
+  if (value.includes('service') || value.includes('servicio')) {
+    return 'servicio';
+  }
+
+  if (value.includes('contact') || value.includes('contacto')) {
+    return 'contacto';
+  }
+
+  if (hasAny(data, ['budget', 'presupuesto', 'quoteAmount'])) {
+    return 'cotizacion';
+  }
+
+  if (hasAny(data, ['service', 'servicio', 'category', 'selectedService'])) {
+    return 'servicio';
+  }
+
+  if (hasAny(data, ['email', 'correo']) && hasAny(data, ['subject', 'asunto'])) {
+    return 'contacto';
+  }
+
+  return 'desconocido';
+}
+
+function normalizeCategoria(data: MessageRecord): ServicioCategoria | null {
+  const raw = readText(data, ['service', 'servicio', 'category', 'selectedService'], '').toLowerCase();
+
+  if (raw.includes('landing')) {
+    return 'Landing Page';
+  }
+
+  if (raw.includes('e-commerce') || raw.includes('ecommerce') || raw.includes('tienda')) {
+    return 'E-commerce';
+  }
+
+  if (raw.includes('web app') || raw.includes('aplicaciones web') || raw.includes('aplicacion') || raw.includes('app')) {
+    return 'Aplicaciones Web';
+  }
+
+  return null;
+}
+
+function normalizeEstado(data: MessageRecord): 'Pendiente' | 'Revisada' {
+  const raw = readText(data, ['status', 'estado'], '').toLowerCase();
+  return raw.includes('revis') ? 'Revisada' : 'Pendiente';
+}
+
+function readText(data: MessageRecord, keys: string[], fallback: string): string {
+  for (const key of keys) {
+    const value = data[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return fallback;
+}
+
+function hasAny(data: MessageRecord, keys: string[]): boolean {
+  return keys.some((key) => {
+    const value = data[key];
+    return typeof value === 'string' ? value.trim().length > 0 : value !== undefined && value !== null;
+  });
+}
+
+function formatDate(data: MessageRecord): string {
+  const directDate = data.date;
+  const createdAt = data.createdAt;
+  const timestamp = directDate ?? createdAt;
+
+  if (timestamp instanceof Timestamp) {
+    return timestamp.toDate().toLocaleDateString('es-ES');
+  }
+
+  if (typeof timestamp === 'string') {
+    const parsed = new Date(timestamp);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toLocaleDateString('es-ES');
+    }
+  }
+
+  return 'Sin fecha';
+}
+
+function Banner({ children }: { children: ReactNode }) {
+  return <div className="mb-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{children}</div>;
 }
 
 function Card({ title, value }: { title: string; value: string }) {
