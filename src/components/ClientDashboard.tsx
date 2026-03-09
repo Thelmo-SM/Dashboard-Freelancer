@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode, useEffect, useMemo, useState } from 'react';
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { collection, deleteDoc, doc, FirestoreError, getDocs, Timestamp } from 'firebase/firestore';
 import { db } from '@/utils/firebase';
 
@@ -53,6 +53,12 @@ type Seccion = 'Resumen' | 'Servicios' | 'Cotizaciones' | 'Proyectos' | 'Contact
 
 type MessageRecord = Record<string, unknown>;
 
+type AppNotification = {
+  id: string;
+  text: string;
+  createdAt: string;
+};
+
 const secciones: Seccion[] = ['Resumen', 'Servicios', 'Cotizaciones', 'Proyectos', 'Contactos', 'Configuración'];
 const categorias: ServicioCategoria[] = ['Landing Page', 'E-commerce', 'Aplicaciones Web'];
 
@@ -65,6 +71,10 @@ export default function ClientDashboard() {
   const [contactos, setContactos] = useState<Contacto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
+  const [verNotificaciones, setVerNotificaciones] = useState(false);
+  const [notificaciones, setNotificaciones] = useState<AppNotification[]>([]);
+  const knownRecordIdsRef = useRef<Set<string>>(new Set());
   const [proyectos, setProyectos] = useState<ProyectoPendiente[]>([
     { id: 1, cliente: 'Carla Méndez', proyecto: 'Portal corporativo', estado: 'En revisión', nota: 'Enviar propuesta final.' },
     { id: 2, cliente: 'Studio Fit', proyecto: 'Dashboard interno', estado: 'Pendiente', nota: 'Falta definir accesos.' },
@@ -155,6 +165,43 @@ export default function ClientDashboard() {
           });
         });
 
+        const currentIds = new Set<string>([
+          ...loadedSolicitudes.map((item) => `messages:${item.id}`),
+          ...loadedCotizaciones.map((item) => `${item.sourceCollection}:${item.id}`),
+          ...loadedContactos.map((item) => `messages:${item.id}`),
+        ]);
+
+        if (knownRecordIdsRef.current.size > 0) {
+          const nuevas: AppNotification[] = [];
+
+          loadedSolicitudes.forEach((item) => {
+            const key = `messages:${item.id}`;
+            if (!knownRecordIdsRef.current.has(key)) {
+              nuevas.push({ id: key, text: `Nueva solicitud de servicio de ${item.nombre}`, createdAt: new Date().toLocaleTimeString('es-ES') });
+            }
+          });
+
+          loadedCotizaciones.forEach((item) => {
+            const key = `${item.sourceCollection}:${item.id}`;
+            if (!knownRecordIdsRef.current.has(key)) {
+              nuevas.push({ id: key, text: `Nueva cotización de ${item.cliente}`, createdAt: new Date().toLocaleTimeString('es-ES') });
+            }
+          });
+
+          loadedContactos.forEach((item) => {
+            const key = `messages:${item.id}`;
+            if (!knownRecordIdsRef.current.has(key)) {
+              nuevas.push({ id: key, text: `Nuevo contacto de ${item.nombre}`, createdAt: new Date().toLocaleTimeString('es-ES') });
+            }
+          });
+
+          if (nuevas.length > 0) {
+            setNotificaciones((prev) => [...nuevas, ...prev].slice(0, 12));
+          }
+        }
+
+        knownRecordIdsRef.current = currentIds;
+
         setSolicitudes(loadedSolicitudes);
         setCotizaciones(loadedCotizaciones);
         setContactos(loadedContactos);
@@ -167,7 +214,12 @@ export default function ClientDashboard() {
       }
     };
 
-    loadMessages();
+    void loadMessages();
+    const intervalId = setInterval(() => {
+      void loadMessages();
+    }, 30000);
+
+    return () => clearInterval(intervalId);
   }, []);
 
   const solicitudesFiltradas = useMemo(
@@ -229,7 +281,15 @@ export default function ClientDashboard() {
 
   return (
     <div className="flex h-screen bg-slate-100">
-      <aside className="w-72 bg-black text-gray-100 p-6 flex flex-col">
+      {menuMovilAbierto && (
+        <button
+          className="fixed inset-0 z-30 bg-black/40 md:hidden"
+          onClick={() => setMenuMovilAbierto(false)}
+          aria-label="Cerrar menú"
+        />
+      )}
+
+      <aside className={`fixed left-0 top-0 z-40 h-full w-72 transform bg-black p-6 text-gray-100 transition-transform md:static md:z-auto md:translate-x-0 ${menuMovilAbierto ? "translate-x-0" : "-translate-x-full"}`}>
         <h2 className="text-2xl font-bold mb-2">Thelmo SM</h2>
         <p className="text-xs text-gray-400 mb-6">Conectado a Firebase / collections: messages y quotations</p>
         <nav className="space-y-2">
@@ -239,7 +299,7 @@ export default function ClientDashboard() {
               className={`w-full text-left px-4 py-2 rounded transition ${
                 seccionActiva === seccion ? 'bg-indigo-600 text-white' : 'hover:bg-zinc-800'
               }`}
-              onClick={() => setSeccionActiva(seccion)}
+              onClick={() => { setSeccionActiva(seccion); setMenuMovilAbierto(false); }}
             >
               {seccion === 'Servicios' ? 'Solicitud de servicios' : seccion === 'Proyectos' ? 'Proyectos pendientes' : seccion}
             </button>
@@ -247,7 +307,41 @@ export default function ClientDashboard() {
         </nav>
       </aside>
 
-      <main className="flex-1 overflow-y-auto p-6 text-slate-900">
+      <main className="flex-1 overflow-y-auto p-4 text-slate-900 md:p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <button
+            className="rounded border border-slate-300 bg-white px-3 py-2 text-sm md:hidden"
+            onClick={() => setMenuMovilAbierto((prev) => !prev)}
+          >
+            ☰ Menú
+          </button>
+          <div className="relative ml-auto">
+            <button
+              className="rounded border border-slate-300 bg-white px-3 py-2 text-sm"
+              onClick={() => setVerNotificaciones((prev) => !prev)}
+            >
+              🔔 Notificaciones ({notificaciones.length})
+            </button>
+            {verNotificaciones && (
+              <div className="absolute right-0 z-20 mt-2 w-80 rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-sm font-semibold">Alertas recientes</p>
+                  <button className="text-xs text-indigo-600" onClick={() => setNotificaciones([])}>Limpiar</button>
+                </div>
+                <div className="max-h-64 space-y-2 overflow-y-auto">
+                  {notificaciones.length === 0 && <p className="text-sm text-slate-500">Sin notificaciones nuevas.</p>}
+                  {notificaciones.map((item) => (
+                    <div key={item.id} className="rounded border border-slate-100 bg-slate-50 p-2">
+                      <p className="text-sm">{item.text}</p>
+                      <p className="text-xs text-slate-500">{item.createdAt}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
         {error && <Banner>{error}</Banner>}
 
         {seccionActiva === 'Resumen' && (
