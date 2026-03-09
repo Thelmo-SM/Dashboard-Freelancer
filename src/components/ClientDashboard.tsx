@@ -1,7 +1,7 @@
 'use client';
 
 import { ReactNode, useEffect, useMemo, useState } from 'react';
-import { collection, FirestoreError, getDocs, Timestamp } from 'firebase/firestore';
+import { collection, deleteDoc, doc, FirestoreError, getDocs, Timestamp } from 'firebase/firestore';
 import { db } from '@/utils/firebase';
 
 type ServicioCategoria = 'Landing Page' | 'E-commerce' | 'Aplicaciones Web';
@@ -12,6 +12,7 @@ type Solicitud = {
   mensaje: string;
   categoria: ServicioCategoria;
   fecha: string;
+  sourceCollection: 'messages';
 };
 
 type Cotizacion = {
@@ -28,6 +29,7 @@ type Cotizacion = {
   deadline: string;
   references: string;
   additionalDetails: string;
+  sourceCollection: 'messages' | 'quotations';
 };
 
 type Contacto = {
@@ -36,6 +38,7 @@ type Contacto = {
   correo: string;
   asunto: string;
   fecha: string;
+  sourceCollection: 'messages';
 };
 
 type ProyectoPendiente = {
@@ -96,6 +99,7 @@ export default function ClientDashboard() {
               mensaje: readText(data, ['message', 'mensaje', 'description'], 'Sin mensaje'),
               categoria,
               fecha: formatDate(data),
+              sourceCollection: 'messages',
             });
           }
 
@@ -114,6 +118,7 @@ export default function ClientDashboard() {
               deadline: readText(data, ['deadline', 'plazo'], 'Sin especificar'),
               references: readText(data, ['references', 'referencias'], 'Sin especificar'),
               additionalDetails: readText(data, ['additionalDetails', 'detallesAdicionales'], 'Sin especificar'),
+              sourceCollection: 'messages',
             });
           }
 
@@ -124,6 +129,7 @@ export default function ClientDashboard() {
               correo: readText(data, ['email', 'correo'], 'Sin correo'),
               asunto: readText(data, ['subject', 'asunto', 'message', 'mensaje'], 'Sin asunto'),
               fecha: formatDate(data),
+              sourceCollection: 'messages',
             });
           }
         });
@@ -145,6 +151,7 @@ export default function ClientDashboard() {
             deadline: readText(data, ['deadline', 'plazo'], 'Sin especificar'),
             references: readText(data, ['references', 'referencias'], 'Sin especificar'),
             additionalDetails: readText(data, ['additionalDetails', 'detallesAdicionales'], 'Sin especificar'),
+            sourceCollection: 'quotations',
           });
         });
 
@@ -185,6 +192,39 @@ export default function ClientDashboard() {
     setProyectos((prev) =>
       prev.map((proyecto) => (proyecto.id === id ? { ...proyecto, [campo]: valor } : proyecto)),
     );
+  };
+
+
+  const eliminarSolicitud = async (solicitud: Solicitud) => {
+    try {
+      await deleteDoc(doc(db, solicitud.sourceCollection, solicitud.id));
+      setSolicitudes((prev) => prev.filter((item) => item.id !== solicitud.id));
+    } catch (err: unknown) {
+      setError(buildFirebaseErrorMessage(err));
+    }
+  };
+
+  const eliminarCotizacion = async (cotizacion: Cotizacion) => {
+    try {
+      await deleteDoc(doc(db, cotizacion.sourceCollection, cotizacion.id));
+      setCotizaciones((prev) => prev.filter((item) => item.id !== cotizacion.id));
+      setCotizacionSeleccionada((actual) => (actual?.id === cotizacion.id ? null : actual));
+    } catch (err: unknown) {
+      setError(buildFirebaseErrorMessage(err));
+    }
+  };
+
+  const eliminarContacto = async (contacto: Contacto) => {
+    try {
+      await deleteDoc(doc(db, contacto.sourceCollection, contacto.id));
+      setContactos((prev) => prev.filter((item) => item.id !== contacto.id));
+    } catch (err: unknown) {
+      setError(buildFirebaseErrorMessage(err));
+    }
+  };
+
+  const eliminarProyecto = (id: number) => {
+    setProyectos((prev) => prev.filter((item) => item.id !== id));
   };
 
   return (
@@ -252,6 +292,12 @@ export default function ClientDashboard() {
                       <p className="text-sm text-slate-500">{solicitud.fecha}</p>
                     </div>
                     <p className="text-sm text-slate-700 mt-2">{solicitud.mensaje}</p>
+                    <button
+                      onClick={() => eliminarSolicitud(solicitud)}
+                      className="mt-3 rounded bg-red-600 px-3 py-1 text-sm text-white hover:bg-red-500"
+                    >
+                      Eliminar
+                    </button>
                   </article>
                 ))}
                 {solicitudesFiltradas.length === 0 && <p>No hay mensajes en esta categoría.</p>}
@@ -276,6 +322,7 @@ export default function ClientDashboard() {
                       <Th>Presupuesto</Th>
                       <Th>Estado</Th>
                       <Th>Detalle</Th>
+                      <Th>Acciones</Th>
                     </tr>
                   </thead>
                   <tbody>
@@ -294,11 +341,20 @@ export default function ClientDashboard() {
                             Ver detalle
                           </button>
                         </Td>
+                        <Td>
+                          <button
+                            className="rounded bg-red-600 px-3 py-1 text-white hover:bg-red-500"
+                            onClick={() => eliminarCotizacion(cotizacion)}
+                          >
+                            Eliminar
+                          </button>
+                        </Td>
                       </tr>
                     ))}
                     {cotizaciones.length === 0 && (
                       <tr>
                         <Td>No hay cotizaciones registradas.</Td>
+                        <Td>-</Td>
                         <Td>-</Td>
                         <Td>-</Td>
                         <Td>-</Td>
@@ -358,6 +414,7 @@ export default function ClientDashboard() {
                     <Th>Proyecto</Th>
                     <Th>Estado</Th>
                     <Th>Nota</Th>
+                    <Th>Acciones</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -395,6 +452,14 @@ export default function ClientDashboard() {
                           placeholder="Nota"
                         />
                       </Td>
+                      <Td>
+                        <button
+                          onClick={() => eliminarProyecto(proyecto.id)}
+                          className="rounded bg-red-600 px-3 py-1 text-white hover:bg-red-500"
+                        >
+                          Eliminar
+                        </button>
+                      </Td>
                     </tr>
                   ))}
                 </tbody>
@@ -424,6 +489,12 @@ export default function ClientDashboard() {
                     </div>
                     <p className="text-sm">{contacto.correo}</p>
                     <p className="text-sm text-slate-700 mt-2">{contacto.asunto}</p>
+                    <button
+                      onClick={() => eliminarContacto(contacto)}
+                      className="mt-3 rounded bg-red-600 px-3 py-1 text-sm text-white hover:bg-red-500"
+                    >
+                      Eliminar
+                    </button>
                   </article>
                 ))}
                 {contactos.length === 0 && <p>No hay contactos registrados todavía.</p>}
