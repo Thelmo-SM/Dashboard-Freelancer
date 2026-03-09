@@ -17,10 +17,17 @@ type Solicitud = {
 type Cotizacion = {
   id: string;
   cliente: string;
+  correo: string;
   servicio: string;
   presupuesto: string;
   fecha: string;
   estado: 'Pendiente' | 'Revisada';
+  projectType: string;
+  functionalities: string[];
+  designPreferences: string;
+  deadline: string;
+  references: string;
+  additionalDetails: string;
 };
 
 type Contacto = {
@@ -51,6 +58,7 @@ export default function ClientDashboard() {
   const [categoriaActiva, setCategoriaActiva] = useState<ServicioCategoria>('Landing Page');
   const [solicitudes, setSolicitudes] = useState<Solicitud[]>([]);
   const [cotizaciones, setCotizaciones] = useState<Cotizacion[]>([]);
+  const [cotizacionSeleccionada, setCotizacionSeleccionada] = useState<Cotizacion | null>(null);
   const [contactos, setContactos] = useState<Contacto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -95,10 +103,17 @@ export default function ClientDashboard() {
             loadedCotizaciones.push({
               id: docSnap.id,
               cliente: readText(data, ['name', 'nombre', 'cliente'], 'Sin cliente'),
+              correo: readText(data, ['email', 'correo'], 'Sin correo'),
               servicio: readText(data, ['service', 'servicio', 'category', 'selectedService'], 'No especificado'),
               presupuesto: readText(data, ['budget', 'presupuesto', 'quoteAmount'], 'No especificado'),
               fecha: formatDate(data),
               estado: normalizeEstado(data),
+              projectType: normalizeProjectType(data),
+              functionalities: readArray(data, ['functionalities', 'funcionalidades']),
+              designPreferences: readText(data, ['designPreferences', 'preferenciasDiseno'], 'Sin especificar'),
+              deadline: readText(data, ['deadline', 'plazo'], 'Sin especificar'),
+              references: readText(data, ['references', 'referencias'], 'Sin especificar'),
+              additionalDetails: readText(data, ['additionalDetails', 'detallesAdicionales'], 'Sin especificar'),
             });
           }
 
@@ -119,10 +134,17 @@ export default function ClientDashboard() {
           loadedCotizaciones.push({
             id: docSnap.id,
             cliente: readText(data, ['name', 'nombre', 'cliente'], 'Sin cliente'),
+            correo: readText(data, ['email', 'correo'], 'Sin correo'),
             servicio: normalizeCategoria(data) ?? readText(data, ['service', 'servicio', 'category', 'selectedService'], 'No especificado'),
             presupuesto: readText(data, ['budget', 'presupuesto', 'quoteAmount'], 'No especificado'),
             fecha: formatDate(data),
             estado: normalizeEstado(data),
+            projectType: normalizeProjectType(data),
+            functionalities: readArray(data, ['functionalities', 'funcionalidades']),
+            designPreferences: readText(data, ['designPreferences', 'preferenciasDiseno'], 'Sin especificar'),
+            deadline: readText(data, ['deadline', 'plazo'], 'Sin especificar'),
+            references: readText(data, ['references', 'referencias'], 'Sin especificar'),
+            additionalDetails: readText(data, ['additionalDetails', 'detallesAdicionales'], 'Sin especificar'),
           });
         });
 
@@ -253,6 +275,7 @@ export default function ClientDashboard() {
                       <Th>Servicio</Th>
                       <Th>Presupuesto</Th>
                       <Th>Estado</Th>
+                      <Th>Detalle</Th>
                     </tr>
                   </thead>
                   <tbody>
@@ -263,6 +286,14 @@ export default function ClientDashboard() {
                         <Td>{cotizacion.servicio}</Td>
                         <Td>{cotizacion.presupuesto}</Td>
                         <Td>{cotizacion.estado}</Td>
+                        <Td>
+                          <button
+                            className="rounded bg-indigo-600 px-3 py-1 text-white hover:bg-indigo-500"
+                            onClick={() => setCotizacionSeleccionada(cotizacion)}
+                          >
+                            Ver detalle
+                          </button>
+                        </Td>
                       </tr>
                     ))}
                     {cotizaciones.length === 0 && (
@@ -272,11 +303,43 @@ export default function ClientDashboard() {
                         <Td>-</Td>
                         <Td>-</Td>
                         <Td>-</Td>
+                        <Td>-</Td>
                       </tr>
                     )}
                   </tbody>
                 </table>
               </div>
+            )}
+
+            {cotizacionSeleccionada && (
+              <article className="mt-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold">Detalle completo de cotización</h2>
+                  <button
+                    className="rounded bg-slate-200 px-3 py-1 text-sm hover:bg-slate-300"
+                    onClick={() => setCotizacionSeleccionada(null)}
+                  >
+                    Cerrar
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 text-sm">
+                  <p><strong>ID:</strong> {cotizacionSeleccionada.id}</p>
+                  <p><strong>Fecha:</strong> {cotizacionSeleccionada.fecha}</p>
+                  <p><strong>Cliente:</strong> {cotizacionSeleccionada.cliente}</p>
+                  <p><strong>Correo:</strong> {cotizacionSeleccionada.correo}</p>
+                  <p><strong>Servicio:</strong> {cotizacionSeleccionada.servicio}</p>
+                  <p><strong>Tipo de proyecto:</strong> {cotizacionSeleccionada.projectType}</p>
+                  <p><strong>Presupuesto:</strong> {cotizacionSeleccionada.presupuesto}</p>
+                  <p><strong>Plazo:</strong> {cotizacionSeleccionada.deadline}</p>
+                  <p><strong>Estado:</strong> {cotizacionSeleccionada.estado}</p>
+                </div>
+                <div className="mt-3 text-sm">
+                  <p><strong>Funcionalidades:</strong> {cotizacionSeleccionada.functionalities.length > 0 ? cotizacionSeleccionada.functionalities.join(', ') : 'Sin especificar'}</p>
+                  <p className="mt-2"><strong>Preferencias de diseño:</strong> {cotizacionSeleccionada.designPreferences}</p>
+                  <p className="mt-2"><strong>Referencias:</strong> {cotizacionSeleccionada.references}</p>
+                  <p className="mt-2"><strong>Detalles adicionales:</strong> {cotizacionSeleccionada.additionalDetails}</p>
+                </div>
+              </article>
             )}
           </section>
         )}
@@ -461,6 +524,30 @@ function normalizeCategoria(data: MessageRecord): ServicioCategoria | null {
   }
 
   return null;
+}
+
+
+function readArray(data: MessageRecord, keys: string[]): string[] {
+  for (const key of keys) {
+    const value = data[key];
+    if (Array.isArray(value)) {
+      return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+    }
+  }
+  return [];
+}
+
+function normalizeProjectType(data: MessageRecord): string {
+  const raw = readText(data, ['projectType', 'tipoProyecto'], '').toLowerCase();
+
+  if (raw.includes('landing')) return 'Landing Page';
+  if (raw.includes('corporativo')) return 'Página Corporativa';
+  if (raw.includes('ecommerce') || raw.includes('e-commerce')) return 'E-commerce';
+  if (raw.includes('blog')) return 'Blog';
+  if (raw.includes('portafolio')) return 'Portafolio';
+  if (raw.includes('otro')) return 'Otro';
+
+  return raw ? raw : 'Sin especificar';
 }
 
 function normalizeEstado(data: MessageRecord): 'Pendiente' | 'Revisada' {
